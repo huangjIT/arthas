@@ -66,6 +66,7 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
             ThreadPoolExecutor tp = (ThreadPoolExecutor) target;
             if (threadPoolDataMap.get(tp) == null) {
                 ThreadPoolVO vo = new ThreadPoolVO();
+                // 获取栈信息，拼接栈记录
                 StackTraceElement[] stacks = Thread.currentThread().getStackTrace();
                 StringBuilder stackSb = new StringBuilder();
                 int stackTraceDepth = threadPoolCommand.getStackTraceDepth();
@@ -95,6 +96,7 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
                 vo.setStackInfo(stackSb.toString());
                 // ConcurrentHashMap的get方法没有做同步，所以put前再check一次，如果已经存在，则不用调用带同步锁机制的put方法
                 if (threadPoolDataMap.get(tp) == null) {
+                    // 存到map中，其他信息由ThreadPoolTimer去采集
                     threadPoolDataMap.put(tp, vo);
                 }
             }
@@ -111,71 +113,80 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
 
 
     private class ThreadPoolTimer extends TimerTask {
+
         @Override
         public void run() {
             try {
                 // 记录采集的当前队列堆积数
-                Map<ThreadPoolExecutor, List<Integer>> sampleCurrentSizeOfWorkQueueMap = new HashMap<ThreadPoolExecutor, List<Integer>>();
+                Map<ThreadPoolExecutor, List<Integer>> currentSizeOfWorkQueueSampleMap = new HashMap<ThreadPoolExecutor, List<Integer>>();
                 // 记录采集的当前繁忙线程数
-                Map<ThreadPoolExecutor, List<Integer>> sampleActiveThreadCountMap = new HashMap<ThreadPoolExecutor, List<Integer>>();
-                // 命令执行时间
+                Map<ThreadPoolExecutor, List<Integer>> activeThreadCountSampleMap = new HashMap<ThreadPoolExecutor, List<Integer>>();
+                // 命令执行总时间
                 int maxDurationMillis = threadPoolCommand.getDuration();
-                // 采集频率
-                int sampleInterval = threadPoolCommand.getSampleInterval();
-                // 兜底，最多采集1024次
-                int maxSampleTimes = Math.min(1024,maxDurationMillis/sampleInterval+1);
+                // 采集频率，不能大于命令总时长
+                int sampleInterval = Math.min(threadPoolCommand.getSampleInterval(),maxDurationMillis);
+                // 兜底，最多采集1024次，最少采集1次
+                int maxSampleTimes = Math.min(1024,Math.max(maxDurationMillis/sampleInterval,1));
                 // 按照固定的采集频率获取已经捕获的线程池的数据
                 while (maxSampleTimes > 0) {
                     for (Map.Entry<ThreadPoolExecutor, ThreadPoolVO> entry : threadPoolDataMap.entrySet()) {
                         ThreadPoolExecutor tpe = entry.getKey();
                         // 获取线程池当前繁忙线程数
-                        if (sampleActiveThreadCountMap.get(tpe) == null) {
+                        if (activeThreadCountSampleMap.get(tpe) == null) {
                             List<Integer> sampleActiveThreadCountList = new ArrayList<Integer>(maxSampleTimes);
                             sampleActiveThreadCountList.add(tpe.getActiveCount());
-                            sampleActiveThreadCountMap.put(tpe, sampleActiveThreadCountList);
+                            activeThreadCountSampleMap.put(tpe, sampleActiveThreadCountList);
                         } else {
-                            sampleActiveThreadCountMap.get(tpe).add(tpe.getActiveCount());
+                            activeThreadCountSampleMap.get(tpe).add(tpe.getActiveCount());
                         }
                         // 获取线程池队列堆积情况
-                        if (sampleCurrentSizeOfWorkQueueMap.get(tpe) == null) {
+                        if (currentSizeOfWorkQueueSampleMap.get(tpe) == null) {
                             List<Integer> sampleCurrentSizeOfWorkQueueList = new ArrayList<Integer>(maxSampleTimes);
                             sampleCurrentSizeOfWorkQueueList.add(tpe.getQueue().size());
-                            sampleCurrentSizeOfWorkQueueMap.put(tpe, sampleCurrentSizeOfWorkQueueList);
+                            currentSizeOfWorkQueueSampleMap.put(tpe, sampleCurrentSizeOfWorkQueueList);
                         } else {
-                            sampleCurrentSizeOfWorkQueueMap.get(tpe).add(tpe.getQueue().size());
+                            currentSizeOfWorkQueueSampleMap.get(tpe).add(tpe.getQueue().size());
                         }
                     }
+                    // sleep
                     Thread.sleep(sampleInterval);
+                    // 采集次数-1
                     maxSampleTimes--;
                 }
+                // 最终的输出list
+                List<ThreadPoolVO> threadPools = new ArrayList<ThreadPoolVO>(threadPoolDataMap.size());
                 // 计算平均时间
                 for (Map.Entry<ThreadPoolExecutor, ThreadPoolVO> entry : threadPoolDataMap.entrySet()) {
                     ThreadPoolExecutor tpe = entry.getKey();
                     ThreadPoolVO vo = entry.getValue();
-                    // 获取采集到的队列堆积情况，如果没有采集到，则默认取当前堆积情况
-                    List<Integer> sampleCurrentSizeOfWorkQueueList = sampleCurrentSizeOfWorkQueueMap.get(tpe);
+                    // 获取采集到的队列堆积数并计算平均值，如果没有采集到，则默认取当前堆积情况
+                    List<Integer> sampleCurrentSizeOfWorkQueueList = currentSizeOfWorkQueueSampleMap.get(tpe);
                     if (sampleCurrentSizeOfWorkQueueList != null) {
                         vo.setCurrentSizeOfWorkQueue(average(sampleCurrentSizeOfWorkQueueList));
                     } else {
                         vo.setCurrentSizeOfWorkQueue(tpe.getQueue().size());
                     }
-                    // 获取采集到的繁忙线程数情况，如果没有采集到，则默认取当前繁忙线程数
-                    List<Integer> sampleActiveThreadCountList = sampleActiveThreadCountMap.get(tpe);
+                    // 获取采集到的繁忙线程数并计算平均值，如果没有采集到，则默认取当前繁忙线程数
+                    List<Integer> sampleActiveThreadCountList = activeThreadCountSampleMap.get(tpe);
                     if (sampleActiveThreadCountList != null) {
                         vo.setActiveThreadCount(average(sampleActiveThreadCountList));
                     } else {
                         vo.setActiveThreadCount(tpe.getActiveCount());
                     }
+                    // 核心线程数
                     vo.setCorePoolSize(tpe.getCorePoolSize());
+                    // 最大线程数
                     vo.setMaximumPoolSize(tpe.getMaximumPoolSize());
+                    threadPools.add(vo);
                 }
-                ThreadPoolModel threadPoolModel = new ThreadPoolModel();
-                List<ThreadPoolVO> threadPools = new ArrayList<ThreadPoolVO>(threadPoolDataMap.values());
                 // 按繁忙线程数从多到少排序
                 Collections.sort(threadPools);
+                // 如果指定了top，则做截取
                 if (threadPoolCommand.getTopNActiveThreadCount() > 0) {
                     threadPools = threadPools.subList(0, Math.min(threadPoolCommand.getTopNActiveThreadCount(), threadPools.size()));
                 }
+                // 输出结果
+                ThreadPoolModel threadPoolModel = new ThreadPoolModel();
                 threadPoolModel.setThreadPools(threadPools);
                 process.appendResult(threadPoolModel);
                 process.end();
