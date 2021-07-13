@@ -117,10 +117,8 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
         @Override
         public void run() {
             try {
-                // 记录采集的当前队列堆积数
-                Map<ThreadPoolExecutor, List<Integer>> currentSizeOfWorkQueueSampleMap = new HashMap<ThreadPoolExecutor, List<Integer>>();
-                // 记录采集的当前繁忙线程数
-                Map<ThreadPoolExecutor, List<Integer>> activeThreadCountSampleMap = new HashMap<ThreadPoolExecutor, List<Integer>>();
+                // 记录采样数据
+                Map<ThreadPoolExecutor, SampleVO> currentSizeOfWorkQueueSampleMap = new HashMap<ThreadPoolExecutor, SampleVO>();
                 // 命令执行总时间
                 int maxDurationMillis = threadPoolCommand.getDuration();
                 // 采集频率，不能大于命令总时长
@@ -133,25 +131,28 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
                 while (maxSampleTimes > 0) {
                     for (Map.Entry<ThreadPoolExecutor, ThreadPoolVO> entry : threadPoolDataMap.entrySet()) {
                         ThreadPoolExecutor tpe = entry.getKey();
-                        // 获取线程池当前繁忙线程数
-                        if (activeThreadCountSampleMap.get(tpe) == null) {
-                            List<Integer> sampleActiveThreadCountList = new ArrayList<Integer>(maxSampleTimes);
-                            sampleActiveThreadCountList.add(tpe.getActiveCount());
-                            activeThreadCountSampleMap.put(tpe, sampleActiveThreadCountList);
+                        // 获取线程池信息
+                        SampleVO sampleVO = currentSizeOfWorkQueueSampleMap.get(tpe);
+                        if (sampleVO == null) {
+                            sampleVO = new SampleVO(tpe.getActiveCount(), tpe.getQueue().size(), 1);
+                            currentSizeOfWorkQueueSampleMap.put(tpe, sampleVO);
                         } else {
-                            activeThreadCountSampleMap.get(tpe).add(tpe.getActiveCount());
-                        }
-                        // 获取线程池队列堆积情况
-                        if (currentSizeOfWorkQueueSampleMap.get(tpe) == null) {
-                            List<Integer> sampleCurrentSizeOfWorkQueueList = new ArrayList<Integer>(maxSampleTimes);
-                            sampleCurrentSizeOfWorkQueueList.add(tpe.getQueue().size());
-                            currentSizeOfWorkQueueSampleMap.put(tpe, sampleCurrentSizeOfWorkQueueList);
-                        } else {
-                            currentSizeOfWorkQueueSampleMap.get(tpe).add(tpe.getQueue().size());
+                            sampleVO.activeThreadCountSampleSum += tpe.getActiveCount();
+                            sampleVO.currentSizeOfWorkQueueSampleSum += tpe.getQueue().size();
+                            sampleVO.sampleTimes++;
                         }
                         // 最后一次采样，计算平均数据
                         if (maxSampleTimes == 1) {
-                            threadPools.add(calculateAverageInfo(currentSizeOfWorkQueueSampleMap,activeThreadCountSampleMap,tpe,entry.getValue()));
+                            ThreadPoolVO vo = entry.getValue();
+                            // 核心线程数
+                            vo.setCorePoolSize(tpe.getCorePoolSize());
+                            // 最大线程数
+                            vo.setMaximumPoolSize(tpe.getMaximumPoolSize());
+                            // 繁忙线程数平均值
+                            vo.setActiveThreadCount(sampleVO.activeThreadCountSampleAverage());
+                            // 队列堆积平均值
+                            vo.setCurrentSizeOfWorkQueue(sampleVO.currentSizeOfWorkQueueSampleAverage());
+                            threadPools.add(vo);
                         }
                     }
                     // 采集次数-1
@@ -177,42 +178,30 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
 
     }
 
-    private ThreadPoolVO calculateAverageInfo(Map<ThreadPoolExecutor, List<Integer>> currentSizeOfWorkQueueSampleMap,
-                                   Map<ThreadPoolExecutor, List<Integer>> activeThreadCountSampleMap,
-                                   ThreadPoolExecutor tpe,
-                                   ThreadPoolVO vo) {
-        // 获取采集到的队列堆积数并计算平均值，如果没有采集到，则默认取当前堆积情况
-        List<Integer> sampleCurrentSizeOfWorkQueueList = currentSizeOfWorkQueueSampleMap.get(tpe);
-        if (sampleCurrentSizeOfWorkQueueList != null) {
-            vo.setCurrentSizeOfWorkQueue(average(sampleCurrentSizeOfWorkQueueList));
-        } else {
-            vo.setCurrentSizeOfWorkQueue(tpe.getQueue().size());
-        }
-        // 获取采集到的繁忙线程数并计算平均值，如果没有采集到，则默认取当前繁忙线程数
-        List<Integer> sampleActiveThreadCountList = activeThreadCountSampleMap.get(tpe);
-        if (sampleActiveThreadCountList != null) {
-            vo.setActiveThreadCount(average(sampleActiveThreadCountList));
-        } else {
-            vo.setActiveThreadCount(tpe.getActiveCount());
-        }
-        // 核心线程数
-        vo.setCorePoolSize(tpe.getCorePoolSize());
-        // 最大线程数
-        vo.setMaximumPoolSize(tpe.getMaximumPoolSize());
-        return vo;
-    }
+    // 采样结果
+    private static class SampleVO {
 
-    private int average(List<Integer> values) {
-        if (values == null || values.size() == 0) {
-            return 0;
-        }
-        int sum = 0;
-        for (int value : values) {
-            sum += value;
-        }
-        return sum / values.size();
-    }
+        // 繁忙线程数采样总和
+        int activeThreadCountSampleSum;
+        // 队列堆积数采样总和
+        int currentSizeOfWorkQueueSampleSum;
+        // 采样次数
+        int sampleTimes;
 
+        SampleVO(int activeThreadCountSampleSum, int currentSizeOfWorkQueueSampleSum, int sampleTimes) {
+            this.activeThreadCountSampleSum = activeThreadCountSampleSum;
+            this.currentSizeOfWorkQueueSampleSum = currentSizeOfWorkQueueSampleSum;
+            this.sampleTimes = sampleTimes;
+        }
+
+        int activeThreadCountSampleAverage() {
+            return activeThreadCountSampleSum / sampleTimes;
+        }
+
+        int currentSizeOfWorkQueueSampleAverage() {
+            return currentSizeOfWorkQueueSampleSum / sampleTimes;
+        }
+    }
 
     private boolean shouldSkip(StackTraceElement ste) {
         String className = ste.getClassName();
