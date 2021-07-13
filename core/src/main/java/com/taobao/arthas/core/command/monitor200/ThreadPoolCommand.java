@@ -38,7 +38,7 @@ public class ThreadPoolCommand extends EnhancerCommand {
      */
     private Integer sampleInterval = 200;
     /**
-     * 默认打印2个栈信息，这样有助于从堆栈里判断是哪个地方的线程池
+     * 默认打印2行栈信息，这样有助于从堆栈里判断是哪个地方的线程池
      */
     private Integer stackTraceDepth = 2;
     /**
