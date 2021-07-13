@@ -38,9 +38,9 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
         this.threadPoolCommand = threadPoolCommand;
     }
 
-
     @Override
     public synchronized void create() {
+
         if (timer == null) {
             timer = new Timer("Timer-for-arthas-threadpool-" + process.session().getSessionId(), true);
             timer.schedule(new ThreadPoolTimer(), 0);
@@ -114,11 +114,11 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
         @Override
         public void run() {
             try {
-                // 100毫秒采集一次，记录采集的当前队列数
+                // 记录采集的当前队列数
                 Map<ThreadPoolExecutor, List<Integer>> sampleCurrentSizeOfWorkQueueMap = new HashMap<ThreadPoolExecutor, List<Integer>>();
-                // 100毫秒采集一次，记录采集的当前繁忙线程数
+                // 记录采集的当前繁忙线程数
                 Map<ThreadPoolExecutor, List<Integer>> sampleActiveThreadCountMap = new HashMap<ThreadPoolExecutor, List<Integer>>();
-                // 命令执行时间，转换成
+                // 命令执行时间
                 int maxDurationMillis = threadPoolCommand.getDuration();
                 // 兜底，最多采集1024次
                 int maxSampleTimes = 1024;

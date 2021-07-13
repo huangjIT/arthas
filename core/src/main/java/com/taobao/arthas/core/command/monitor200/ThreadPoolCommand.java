@@ -49,12 +49,18 @@ public class ThreadPoolCommand extends EnhancerCommand {
     @Option(shortName = "i", longName = "sample-interval")
     @Description("Specify the sampling interval (in ms) ,default value is 200")
     public void setSampleInterval(int sampleInterval) {
+        if (sampleInterval <= 0) {
+            throw new IllegalArgumentException("i must be positive");
+        }
         this.sampleInterval = sampleInterval;
     }
 
     @Option(shortName = "d", longName = "duration")
     @Description("run threadpool for <duration> ms,default value is 1000")
     public void setDuration(int duration) {
+        if (duration <= 0) {
+            throw new IllegalArgumentException("d must be positive");
+        }
         this.duration = duration;
     }
 
@@ -69,10 +75,10 @@ public class ThreadPoolCommand extends EnhancerCommand {
     @Option(shortName = "n", longName = "top-n-threadpools")
     @Description("The number of thread pool(s) to show, ordered by activeThreadCount, Show all by default")
     public void setTopNActiveThreadCount(Integer topNActiveThreadCount) {
+        if (topNActiveThreadCount <= 0) {
+            throw new IllegalArgumentException("n must be positive");
+        }
         this.topNActiveThreadCount = topNActiveThreadCount;
-    }
-
-    public ThreadPoolCommand() {
     }
 
     @Override
