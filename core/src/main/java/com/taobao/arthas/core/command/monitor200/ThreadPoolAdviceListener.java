@@ -114,34 +114,38 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
         @Override
         public void run() {
             try {
-                // 记录采集的当前队列数
+                // 记录采集的当前队列堆积数
                 Map<ThreadPoolExecutor, List<Integer>> sampleCurrentSizeOfWorkQueueMap = new HashMap<ThreadPoolExecutor, List<Integer>>();
                 // 记录采集的当前繁忙线程数
                 Map<ThreadPoolExecutor, List<Integer>> sampleActiveThreadCountMap = new HashMap<ThreadPoolExecutor, List<Integer>>();
                 // 命令执行时间
                 int maxDurationMillis = threadPoolCommand.getDuration();
+                // 采集频率
+                int sampleInterval = threadPoolCommand.getSampleInterval();
                 // 兜底，最多采集1024次
-                int maxSampleTimes = 1024;
-                while (maxDurationMillis >= 0 && maxSampleTimes >= 0) {
+                int maxSampleTimes = Math.min(1024,maxDurationMillis/sampleInterval+1);
+                // 按照固定的采集频率获取已经捕获的线程池的数据
+                while (maxSampleTimes > 0) {
                     for (Map.Entry<ThreadPoolExecutor, ThreadPoolVO> entry : threadPoolDataMap.entrySet()) {
                         ThreadPoolExecutor tpe = entry.getKey();
-                        if (sampleCurrentSizeOfWorkQueueMap.get(tpe) == null) {
-                            List<Integer> sampleCurrentSizeOfWorkQueueList = new ArrayList<Integer>();
-                            sampleCurrentSizeOfWorkQueueList.add(tpe.getQueue().size());
-                            sampleCurrentSizeOfWorkQueueMap.put(tpe, sampleCurrentSizeOfWorkQueueList);
-                        } else {
-                            sampleCurrentSizeOfWorkQueueMap.get(tpe).add(tpe.getQueue().size());
-                        }
+                        // 获取线程池当前繁忙线程数
                         if (sampleActiveThreadCountMap.get(tpe) == null) {
-                            List<Integer> sampleActiveThreadCountList = new ArrayList<Integer>();
+                            List<Integer> sampleActiveThreadCountList = new ArrayList<Integer>(maxSampleTimes);
                             sampleActiveThreadCountList.add(tpe.getActiveCount());
                             sampleActiveThreadCountMap.put(tpe, sampleActiveThreadCountList);
                         } else {
                             sampleActiveThreadCountMap.get(tpe).add(tpe.getActiveCount());
                         }
+                        // 获取线程池队列堆积情况
+                        if (sampleCurrentSizeOfWorkQueueMap.get(tpe) == null) {
+                            List<Integer> sampleCurrentSizeOfWorkQueueList = new ArrayList<Integer>(maxSampleTimes);
+                            sampleCurrentSizeOfWorkQueueList.add(tpe.getQueue().size());
+                            sampleCurrentSizeOfWorkQueueMap.put(tpe, sampleCurrentSizeOfWorkQueueList);
+                        } else {
+                            sampleCurrentSizeOfWorkQueueMap.get(tpe).add(tpe.getQueue().size());
+                        }
                     }
-                    Thread.sleep(threadPoolCommand.getSampleInterval());
-                    maxDurationMillis -= threadPoolCommand.getSampleInterval();
+                    Thread.sleep(sampleInterval);
                     maxSampleTimes--;
                 }
                 // 计算平均时间
