@@ -65,7 +65,6 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
         if (target instanceof ThreadPoolExecutor) {
             ThreadPoolExecutor tp = (ThreadPoolExecutor) target;
             if (threadPoolDataMap.get(tp) == null) {
-                ThreadPoolVO vo = new ThreadPoolVO();
                 // 获取栈信息，拼接栈记录
                 StackTraceElement[] stacks = Thread.currentThread().getStackTrace();
                 StringBuilder stackSb = new StringBuilder();
@@ -93,7 +92,7 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
                     prefix.insert(0, STEP_EMPTY_BOARD);
                     stackSb.append('\n');
                 }
-                vo.setStackInfo(stackSb.toString());
+                ThreadPoolVO vo = new ThreadPoolVO(stackSb.toString());
                 // ConcurrentHashMap的get方法没有做同步，所以put前再check一次，如果已经存在，则不用调用带同步锁机制的put方法
                 if (threadPoolDataMap.get(tp) == null) {
                     // 存到map中，其他信息由ThreadPoolTimer去采集
@@ -137,9 +136,7 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
                             sampleVO = new SampleVO(tpe.getActiveCount(), tpe.getQueue().size(), 1);
                             currentSizeOfWorkQueueSampleMap.put(tpe, sampleVO);
                         } else {
-                            sampleVO.activeThreadCountSampleSum += tpe.getActiveCount();
-                            sampleVO.currentSizeOfWorkQueueSampleSum += tpe.getQueue().size();
-                            sampleVO.sampleTimes++;
+                            sampleVO.sample(tpe.getActiveCount(), tpe.getQueue().size());
                         }
                         // 最后一次采样，计算平均数据
                         if (maxSampleTimes == 1) {
@@ -200,6 +197,12 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
 
         int currentSizeOfWorkQueueSampleAverage() {
             return currentSizeOfWorkQueueSampleSum / sampleTimes;
+        }
+
+        void sample(int activeThreadCountSample, int currentSizeOfWorkQueueSample) {
+            activeThreadCountSampleSum += activeThreadCountSample;
+            currentSizeOfWorkQueueSampleSum += currentSizeOfWorkQueueSample;
+            sampleTimes++;
         }
     }
 
