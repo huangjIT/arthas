@@ -124,9 +124,11 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
                 // 命令执行总时间
                 int maxDurationMillis = threadPoolCommand.getDuration();
                 // 采集频率，不能大于命令总时长
-                int sampleInterval = Math.min(threadPoolCommand.getSampleInterval(),maxDurationMillis);
+                int sampleInterval = Math.min(threadPoolCommand.getSampleInterval(), maxDurationMillis);
                 // 兜底，最多采集1024次，最少采集1次
-                int maxSampleTimes = Math.min(1024,Math.max(maxDurationMillis/sampleInterval,1));
+                int maxSampleTimes = Math.min(1024, Math.max(maxDurationMillis / sampleInterval, 1));
+                // 最终的输出list
+                List<ThreadPoolVO> threadPools = new ArrayList<ThreadPoolVO>(threadPoolDataMap.size());
                 // 按照固定的采集频率获取已经捕获的线程池的数据
                 while (maxSampleTimes > 0) {
                     for (Map.Entry<ThreadPoolExecutor, ThreadPoolVO> entry : threadPoolDataMap.entrySet()) {
@@ -147,41 +149,19 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
                         } else {
                             currentSizeOfWorkQueueSampleMap.get(tpe).add(tpe.getQueue().size());
                         }
+                        // 最后一次采样，计算平均数据
+                        if (maxSampleTimes == 1) {
+                            threadPools.add(calculateAverageInfo(currentSizeOfWorkQueueSampleMap,activeThreadCountSampleMap,tpe,entry.getValue()));
+                        }
                     }
-                    // sleep
-                    Thread.sleep(sampleInterval);
                     // 采集次数-1
                     maxSampleTimes--;
-                }
-                // 最终的输出list
-                List<ThreadPoolVO> threadPools = new ArrayList<ThreadPoolVO>(threadPoolDataMap.size());
-                // 计算平均时间
-                for (Map.Entry<ThreadPoolExecutor, ThreadPoolVO> entry : threadPoolDataMap.entrySet()) {
-                    ThreadPoolExecutor tpe = entry.getKey();
-                    ThreadPoolVO vo = entry.getValue();
-                    // 获取采集到的队列堆积数并计算平均值，如果没有采集到，则默认取当前堆积情况
-                    List<Integer> sampleCurrentSizeOfWorkQueueList = currentSizeOfWorkQueueSampleMap.get(tpe);
-                    if (sampleCurrentSizeOfWorkQueueList != null) {
-                        vo.setCurrentSizeOfWorkQueue(average(sampleCurrentSizeOfWorkQueueList));
-                    } else {
-                        vo.setCurrentSizeOfWorkQueue(tpe.getQueue().size());
-                    }
-                    // 获取采集到的繁忙线程数并计算平均值，如果没有采集到，则默认取当前繁忙线程数
-                    List<Integer> sampleActiveThreadCountList = activeThreadCountSampleMap.get(tpe);
-                    if (sampleActiveThreadCountList != null) {
-                        vo.setActiveThreadCount(average(sampleActiveThreadCountList));
-                    } else {
-                        vo.setActiveThreadCount(tpe.getActiveCount());
-                    }
-                    // 核心线程数
-                    vo.setCorePoolSize(tpe.getCorePoolSize());
-                    // 最大线程数
-                    vo.setMaximumPoolSize(tpe.getMaximumPoolSize());
-                    threadPools.add(vo);
+                    // sleep
+                    Thread.sleep(sampleInterval);
                 }
                 // 按繁忙线程数从多到少排序
                 Collections.sort(threadPools);
-                // 如果指定了top，则做截取
+                // 如果指定了topN，则做截取
                 if (threadPoolCommand.getTopNActiveThreadCount() > 0) {
                     threadPools = threadPools.subList(0, Math.min(threadPoolCommand.getTopNActiveThreadCount(), threadPools.size()));
                 }
@@ -195,6 +175,31 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
             }
         }
 
+    }
+
+    private ThreadPoolVO calculateAverageInfo(Map<ThreadPoolExecutor, List<Integer>> currentSizeOfWorkQueueSampleMap,
+                                   Map<ThreadPoolExecutor, List<Integer>> activeThreadCountSampleMap,
+                                   ThreadPoolExecutor tpe,
+                                   ThreadPoolVO vo) {
+        // 获取采集到的队列堆积数并计算平均值，如果没有采集到，则默认取当前堆积情况
+        List<Integer> sampleCurrentSizeOfWorkQueueList = currentSizeOfWorkQueueSampleMap.get(tpe);
+        if (sampleCurrentSizeOfWorkQueueList != null) {
+            vo.setCurrentSizeOfWorkQueue(average(sampleCurrentSizeOfWorkQueueList));
+        } else {
+            vo.setCurrentSizeOfWorkQueue(tpe.getQueue().size());
+        }
+        // 获取采集到的繁忙线程数并计算平均值，如果没有采集到，则默认取当前繁忙线程数
+        List<Integer> sampleActiveThreadCountList = activeThreadCountSampleMap.get(tpe);
+        if (sampleActiveThreadCountList != null) {
+            vo.setActiveThreadCount(average(sampleActiveThreadCountList));
+        } else {
+            vo.setActiveThreadCount(tpe.getActiveCount());
+        }
+        // 核心线程数
+        vo.setCorePoolSize(tpe.getCorePoolSize());
+        // 最大线程数
+        vo.setMaximumPoolSize(tpe.getMaximumPoolSize());
+        return vo;
     }
 
     private int average(List<Integer> values) {
