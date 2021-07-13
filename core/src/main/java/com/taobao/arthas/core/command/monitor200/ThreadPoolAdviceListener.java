@@ -23,6 +23,7 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
     private static final String STEP_FIRST_CHAR = "`-";
     private static final String STEP_EMPTY_BOARD = "    ";
 
+
     // 输出定时任务
     private Timer timer;
 
@@ -42,7 +43,7 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
     public synchronized void create() {
         if (timer == null) {
             timer = new Timer("Timer-for-arthas-threadpool-" + process.session().getSessionId(), true);
-            timer.schedule(new ThreadPoolTimer(), threadPoolCommand.getSampleInterval());
+            timer.schedule(new ThreadPoolTimer(), 0);
         }
         // 由于是jvm自带的类，所以开启该标识
         GlobalOptions.isUnsafe = true;
@@ -73,7 +74,7 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
                 for (int i = 1; i < stacks.length; i++) {
                     StackTraceElement ste = stacks[i];
                     // 过滤arthas增强类的调用栈
-                    if (shoudSkip(ste)) {
+                    if (shouldSkip(ste)) {
                         continue;
                     }
                     stackSb.append(prefix)
@@ -93,9 +94,7 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
                 }
                 vo.setStackInfo(stackSb.toString());
                 vo.setCorePoolSize(tp.getCorePoolSize());
-                vo.setCurrentSizeOfWorkQueue(tp.getQueue().size());
                 vo.setMaximumPoolSize(tp.getMaximumPoolSize());
-                vo.setActiveThreadCount(tp.getActiveCount());
                 // ConcurrentHashMap的get方法没有做同步，所以put前再check一次，如果已经存在，则不用调用带同步锁机制的put方法
                 if (threadPoolDataMap.get(tp) == null) {
                     threadPoolDataMap.put(tp, vo);
@@ -116,7 +115,52 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
     private class ThreadPoolTimer extends TimerTask {
         @Override
         public void run() {
-            try{
+            try {
+                // 100毫秒采集一次，记录采集的当前队列数
+                Map<ThreadPoolExecutor, List<Integer>> sampleCurrentSizeOfWorkQueueMap = new HashMap<ThreadPoolExecutor, List<Integer>>();
+                // 100毫秒采集一次，记录采集的当前繁忙线程数
+                Map<ThreadPoolExecutor, List<Integer>> sampleActiveThreadCountMap = new HashMap<ThreadPoolExecutor, List<Integer>>();
+                // 命令执行时间，转换成
+                int maxDurationMillis = threadPoolCommand.getDuration();
+                // 兜底，最多采集1024次
+                int maxSampleTimes = 1024;
+                while (maxDurationMillis >= 0 && maxSampleTimes >= 0) {
+                    for (Map.Entry<ThreadPoolExecutor, ThreadPoolVO> entry : threadPoolDataMap.entrySet()) {
+                        ThreadPoolExecutor tpe = entry.getKey();
+                        if (sampleCurrentSizeOfWorkQueueMap.get(tpe) == null) {
+                            List<Integer> sampleCurrentSizeOfWorkQueueList = new ArrayList<Integer>();
+                            sampleCurrentSizeOfWorkQueueList.add(tpe.getQueue().size());
+                            sampleCurrentSizeOfWorkQueueMap.put(tpe, sampleCurrentSizeOfWorkQueueList);
+                        } else {
+                            sampleCurrentSizeOfWorkQueueMap.get(tpe).add(tpe.getQueue().size());
+                        }
+                        if (sampleCurrentSizeOfWorkQueueMap.get(tpe) == null) {
+                            List<Integer> sampleActiveThreadCountList = new ArrayList<Integer>();
+                            sampleActiveThreadCountList.add(tpe.getActiveCount());
+                            sampleActiveThreadCountMap.put(tpe, sampleActiveThreadCountList);
+                        } else {
+                            sampleActiveThreadCountMap.get(tpe).add(tpe.getActiveCount());
+                        }
+                    }
+                    Thread.sleep(threadPoolCommand.getSampleInterval());
+                    maxDurationMillis -= threadPoolCommand.getSampleInterval();
+                    maxSampleTimes--;
+                }
+                // 计算平均时间
+                for (Map.Entry<ThreadPoolExecutor, ThreadPoolVO> entry : threadPoolDataMap.entrySet()) {
+                    ThreadPoolExecutor tpe = entry.getKey();
+                    ThreadPoolVO vo = entry.getValue();
+                    vo.setCurrentSizeOfWorkQueue(tpe.getQueue().size());
+                    vo.setActiveThreadCount(tpe.getActiveCount());
+                    List<Integer> sampleCurrentSizeOfWorkQueueList = sampleCurrentSizeOfWorkQueueMap.get(tpe);
+                    if (sampleCurrentSizeOfWorkQueueList != null) {
+                        vo.setCurrentSizeOfWorkQueue(average(sampleCurrentSizeOfWorkQueueList));
+                    }
+                    List<Integer> sampleActiveThreadCountList = sampleCurrentSizeOfWorkQueueMap.get(tpe);
+                    if (sampleActiveThreadCountList != null) {
+                        vo.setCurrentSizeOfWorkQueue(average(sampleActiveThreadCountList));
+                    }
+                }
                 ThreadPoolModel threadPoolModel = new ThreadPoolModel();
                 List<ThreadPoolVO> threadPools = new ArrayList<ThreadPoolVO>(threadPoolDataMap.values());
                 // 按繁忙线程数从多到少排序
@@ -127,14 +171,26 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
                 threadPoolModel.setThreadPools(threadPools);
                 process.appendResult(threadPoolModel);
                 process.end();
-            } catch (Throwable e){
+            } catch (Throwable e) {
                 process.end(1, e.getMessage() + ", visit " + LogUtil.loggingFile() + " for more detail");
             }
         }
 
     }
 
-    private boolean shoudSkip(StackTraceElement ste) {
+    private int average(List<Integer> values) {
+        if (values == null || values.size() == 0) {
+            return 0;
+        }
+        int sum = 0;
+        for (int value : values) {
+            sum += value;
+        }
+        return sum / values.size();
+    }
+
+
+    private boolean shouldSkip(StackTraceElement ste) {
         String className = ste.getClassName();
         try {
             // 跳过arthas自己的增强类

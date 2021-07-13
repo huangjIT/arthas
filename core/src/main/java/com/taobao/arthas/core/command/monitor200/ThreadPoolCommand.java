@@ -29,9 +29,13 @@ import com.taobao.middleware.cli.annotations.Summary;
 public class ThreadPoolCommand extends EnhancerCommand {
 
     /**
-     * 采样时间，默认1秒，即：记录1秒内有提交任务动作的线程池
+     * 命令执行时长，默认1000毫秒
      */
-    private Integer sampleInterval = 1000;
+    private Integer duration = 1000;
+    /**
+     * 采样时长，在执行时间内，每隔指定时间采样线程池信息，最后输出平均值，默认100毫秒
+     */
+    private Integer sampleInterval = 100;
     /**
      * 默认打印2个栈信息，这样有助于从堆栈里判断是哪个地方的线程池
      */
@@ -45,6 +49,14 @@ public class ThreadPoolCommand extends EnhancerCommand {
     @Description("Specify the sampling interval (in ms) ")
     public void setSampleInterval(int sampleInterval) {
         this.sampleInterval = sampleInterval;
+    }
+
+
+
+    @Option(shortName = "d", longName = "duration")
+    @Description("run threadpool for <duration> ms")
+    public void setDuration(int duration) {
+        this.duration = duration;
     }
 
 
@@ -96,5 +108,9 @@ public class ThreadPoolCommand extends EnhancerCommand {
 
     Integer getTopNActiveThreadCount() {
         return topNActiveThreadCount;
+    }
+
+    public Integer getDuration() {
+        return duration;
     }
 }
