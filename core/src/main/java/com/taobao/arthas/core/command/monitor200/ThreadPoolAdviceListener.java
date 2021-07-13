@@ -117,7 +117,7 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
         public void run() {
             try {
                 // 记录采样数据
-                Map<ThreadPoolExecutor, SampleVO> currentSizeOfWorkQueueSampleMap = new HashMap<ThreadPoolExecutor, SampleVO>();
+                Map<ThreadPoolExecutor, SampleVO> sampleMap = new HashMap<ThreadPoolExecutor, SampleVO>();
                 // 命令执行总时间
                 int maxDurationMillis = threadPoolCommand.getDuration();
                 // 采集频率，不能大于命令总时长
@@ -131,10 +131,10 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
                     for (Map.Entry<ThreadPoolExecutor, ThreadPoolVO> entry : threadPoolDataMap.entrySet()) {
                         ThreadPoolExecutor tpe = entry.getKey();
                         // 获取线程池信息
-                        SampleVO sampleVO = currentSizeOfWorkQueueSampleMap.get(tpe);
+                        SampleVO sampleVO = sampleMap.get(tpe);
                         if (sampleVO == null) {
                             sampleVO = new SampleVO(tpe.getActiveCount(), tpe.getQueue().size(), 1);
-                            currentSizeOfWorkQueueSampleMap.put(tpe, sampleVO);
+                            sampleMap.put(tpe, sampleVO);
                         } else {
                             sampleVO.sample(tpe.getActiveCount(), tpe.getQueue().size());
                         }
