@@ -128,6 +128,8 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
                 List<ThreadPoolVO> threadPools = new ArrayList<ThreadPoolVO>(threadPoolDataMap.size());
                 // 按照固定的采集频率获取已经捕获的线程池的数据
                 while (maxSampleTimes > 0) {
+                    // 此处先sleep，因为timer.schedule(new ThreadPoolTimer(), 0);延迟是0，所以可能此时threadPoolDataMap还没有采集到数据
+                    Thread.sleep(sampleInterval);
                     for (Map.Entry<ThreadPoolExecutor, ThreadPoolVO> entry : threadPoolDataMap.entrySet()) {
                         ThreadPoolExecutor tpe = entry.getKey();
                         // 获取线程池信息
@@ -154,8 +156,6 @@ public class ThreadPoolAdviceListener extends AdviceListenerAdapter {
                     }
                     // 采集次数-1
                     maxSampleTimes--;
-                    // sleep
-                    Thread.sleep(sampleInterval);
                 }
                 // 按繁忙线程数从多到少排序
                 Collections.sort(threadPools);
