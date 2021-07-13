@@ -34,7 +34,7 @@ public class ThreadPoolCommand extends EnhancerCommand {
      */
     private Integer duration = 1000;
     /**
-     * 采样时长，在执行时间内，每隔指定时间采样线程池信息，最后输出平均值，默认100毫秒
+     * 采样时长，在执行时间内，每隔指定时间采样线程池信息，最后输出平均值，默认200毫秒
      */
     private Integer sampleInterval = 200;
     /**
@@ -47,20 +47,20 @@ public class ThreadPoolCommand extends EnhancerCommand {
     private Integer topNActiveThreadCount = -1;
 
     @Option(shortName = "i", longName = "sample-interval")
-    @Description("Specify the sampling interval (in ms) ")
+    @Description("Specify the sampling interval (in ms) ,default value is 200")
     public void setSampleInterval(int sampleInterval) {
         this.sampleInterval = sampleInterval;
     }
 
     @Option(shortName = "d", longName = "duration")
-    @Description("run threadpool for <duration> ms")
+    @Description("run threadpool for <duration> ms,default value is 1000")
     public void setDuration(int duration) {
         this.duration = duration;
     }
 
 
     @Option(shortName = "sd", longName = "stack-depth")
-    @Description("Display the stack info of specified depth")
+    @Description("Display the stack info of specified depth,default value is 2")
     public void setStackTraceDepth(int stackTraceDepth) {
         this.stackTraceDepth = stackTraceDepth;
     }
@@ -68,7 +68,7 @@ public class ThreadPoolCommand extends EnhancerCommand {
 
     @Option(shortName = "n", longName = "top-n-threadpools")
     @Description("The number of thread pool(s) to show, ordered by activeThreadCount, Show all by default")
-    public void setTopNBusy(Integer topNActiveThreadCount) {
+    public void setTopNActiveThreadCount(Integer topNActiveThreadCount) {
         this.topNActiveThreadCount = topNActiveThreadCount;
     }
 
